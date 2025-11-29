@@ -1,6 +1,7 @@
-import "dotenv/config";
-import Server from "./config/server.config";
-import { SERVER_PORT } from "./config/env.config";
+import Server from './config/server.config.js';
+import _connect from './database.js';
+
+import { SERVER_PORT } from './config/env.config.js';
 
 async function startServer() {
   try {
@@ -8,8 +9,9 @@ async function startServer() {
       console.info(`Server running on http://localhost:${SERVER_PORT}`);
     });
   } catch (error) {
-    console.error("Error starting server", error);
+    console.error('Error starting server', error);
   }
 }
 
+_connect();
 startServer();
