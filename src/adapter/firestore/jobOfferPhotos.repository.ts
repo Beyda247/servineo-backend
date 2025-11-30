@@ -1,12 +1,13 @@
 // src/adapter/firestore/jobOfferPhotos.repository.ts
-import { db, bucket } from '../../config/firebase.config';
+import { db } from '../../config/firebase.config';
+import { deleteFileFromDrive } from '../../services/googleDrive.service';
+
 const COLLECTION = 'ofertadetrabajo';
 
 export const addJobOfferPhoto = async (
   userId: string,
-  file: any // ahora sí lo reconoce
+  file: any
 ): Promise<string> => {
-  // Contar fotos existentes
   const snapshot = await db
     .collection(COLLECTION)
     .doc(userId)
@@ -17,30 +18,19 @@ export const addJobOfferPhoto = async (
     throw new Error('Máximo 5 fotos permitidas por usuario');
   }
 
-  // Subir archivo
-  const fileName = `${userId}/${Date.now()}_${file.originalname}`;
-  const fileUpload = bucket.file(`job-offers/${fileName}`);
-
-  await fileUpload.save(file.buffer, {
-    metadata: { contentType: file.mimetype },
-  });
-
-  await fileUpload.makePublic();
-  const publicUrl = `https://storage.googleapis.com/${bucket.name}/job-offers/${fileName}`;
-
-  // Guardar referencia
+  // Guardar referencia en Firestore
   await db
     .collection(COLLECTION)
     .doc(userId)
     .collection('photos')
     .add({
-      url: publicUrl,
-      fileName,
+      url: file.publicUrl,
+      driveFileId: file.driveFileId,
       originalName: file.originalname,
       uploadedAt: new Date(),
     });
 
-  return publicUrl;
+  return file.publicUrl;
 };
 
 export const getJobOfferPhotos = async (userId: string) => {
@@ -57,7 +47,14 @@ export const getJobOfferPhotos = async (userId: string) => {
   }));
 };
 
-export const deleteJobOfferPhoto = async (userId: string, photoId: string, fileName: string) => {
-  await bucket.file(`job-offers/${fileName}`).delete().catch(() => {});
+export const deleteJobOfferPhoto = async (userId: string, photoId: string, driveFileId: string) => {
+  // Eliminar de Google Drive
+  try {
+    await deleteFileFromDrive(driveFileId);
+  } catch (error) {
+    console.error('Error deleting from Drive:', error);
+  }
+
+  // Eliminar de Firestore
   await db.collection(COLLECTION).doc(userId).collection('photos').doc(photoId).delete();
 };
