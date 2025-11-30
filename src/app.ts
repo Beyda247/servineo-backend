@@ -14,6 +14,7 @@ import searchRoutes from './api/routes/search.routes';
 import experienceRoutes from './routes/experience.routes';
 import userProfileRoutes from './routes/userProfile.routes';
 import userRoutes from './routes/user.routes';
+import uploadDriveRoutes from './api/routes/uploadDrive.routes';
 
 import registrarDatosRouter from '../src/api/routes/userManagement/registrarDatos.routes';
 import fotoPerfilRouter from '../src/api/routes/userManagement/fotoPerfil.routes';
@@ -32,8 +33,6 @@ import clienteRouter from '../src/api/routes/userManagement/cliente.routes';
 import obtenerContrasenaRouter from '../src/api/routes/userManagement/obtener.routes';
 import portfolioRoutes from '../src/routes/portfolio.routes';
 import routerUser from './api/routes/user.routes';
-
-
 
 
 const app = express();
@@ -90,6 +89,8 @@ app.use('/auth', githubAuthRouter);
 app.use('/auth', discordRoutes);
 app.use('/api/controlC/cliente', clienteRouter);
 app.use('/api/user',routerUser);
+app.use('/api/upload', uploadDriveRoutes);
+
 export const registerRoutes = (app: any) => {
   app.use('/devices', deviceRouter);
 };
