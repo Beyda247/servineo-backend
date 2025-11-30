@@ -9,6 +9,7 @@ import {
   getJobOfferPhotos,
   deleteJobOfferPhoto,
 } from '../adapter/firestore/jobOfferPhotos.repository';
+import { uploadFileToDrive, getDirectImageUrl } from '../services/googleDrive.service';
 import multer from 'multer';
 
 const upload = multer({
@@ -24,25 +25,53 @@ const upload = multer({
   },
 });
 
-// === FOTO DE PERFIL (solo guarda la URL) ===
-export const updateProfilePhoto = async (req: Request, res: Response) => {
-  try {
-    const { userId, photoUrl } = req.body;
+// === FOTO DE PERFIL (sube a Drive y guarda URL) ===
+export const updateProfilePhoto = [
+  upload.single('photo'),
+  async (req: Request, res: Response) => {
+    try {
+      const userId = req.body.userId || req.query.userId;
+      
+      if (!userId) {
+        return res.status(400).json({ error: 'userId es requerido' });
+      }
 
-    if (!userId || !photoUrl) {
-      return res.status(400).json({ error: 'userId y photoUrl son requeridos' });
+      if (!(req as any).file) {
+        return res.status(400).json({ error: 'No se subió ningún archivo' });
+      }
+
+      const file = (req as any).file;
+      const timestamp = Date.now();
+      const fileName = `profile_${userId}_${timestamp}_${file.originalname}`;
+      const folderId = process.env.GOOGLE_DRIVE_FOLDER_ID;
+
+      // Subir a Google Drive
+      const result = await uploadFileToDrive(
+        file.buffer,
+        fileName,
+        file.mimetype,
+        folderId
+      );
+
+      // Guardar URL en Firestore
+      await setProfilePhotoUrl(userId, result.directLink);
+
+      res.json({ 
+        success: true, 
+        message: 'Foto de perfil actualizada', 
+        photoUrl: result.directLink,
+        fileId: result.fileId
+      });
+    } catch (error: any) {
+      console.error('Error updating profile photo:', error);
+      res.status(500).json({ error: error.message });
     }
-
-    await setProfilePhotoUrl(userId, photoUrl);
-    res.json({ success: true, message: 'Foto de perfil actualizada', photoUrl });
-  } catch (error: any) {
-    res.status(500).json({ error: error.message });
-  }
-};
+  },
+];
 
 export const getMyProfilePhoto = async (req: Request, res: Response) => {
   try {
-    const { userId } = req.query; // o req.body, como prefieras
+    const { userId } = req.query;
 
     if (!userId || typeof userId !== 'string') {
       return res.status(400).json({ error: 'userId es requerido' });
@@ -64,19 +93,42 @@ export const uploadJobOfferPhoto = [
         return res.status(400).json({ error: 'No se subió ningún archivo' });
       }
 
-      // userId viene en el form-data o en query
       const userId = (req.body.userId || req.query.userId) as string;
 
       if (!userId) {
-        return res.status(400).json({ error: 'userId es requerido (en form-data o query)' });
+        return res.status(400).json({ error: 'userId es requerido' });
       }
 
-      const photoUrl = await addJobOfferPhoto(userId, (req as any).file);
-      res.json({ success: true, photoUrl });
+      const file = (req as any).file;
+      const timestamp = Date.now();
+      const fileName = `joboffer_${userId}_${timestamp}_${file.originalname}`;
+      const folderId = process.env.GOOGLE_DRIVE_FOLDER_ID;
+
+      // Subir a Google Drive
+      const result = await uploadFileToDrive(
+        file.buffer,
+        fileName,
+        file.mimetype,
+        folderId
+      );
+
+      // Guardar referencia en Firestore
+      const photoUrl = await addJobOfferPhoto(userId, {
+        ...file,
+        driveFileId: result.fileId,
+        publicUrl: result.directLink,
+      });
+
+      res.json({ 
+        success: true, 
+        photoUrl: result.directLink,
+        fileId: result.fileId
+      });
     } catch (error: any) {
       if (error.message.includes('Máximo 5')) {
         return res.status(400).json({ error: error.message });
       }
+      console.error('Error uploading job offer photo:', error);
       res.status(500).json({ error: error.message });
     }
   },
@@ -111,3 +163,48 @@ export const removeJobOfferPhoto = async (req: Request, res: Response) => {
     res.status(500).json({ error: error.message });
   }
 };
+
+// === SUBIDA MÚLTIPLE DE FOTOS (para ofertas de trabajo) ===
+export const uploadMultipleJobOfferPhotos = [
+  upload.array('files', 5),
+  async (req: Request, res: Response) => {
+    try {
+      const files = (req as any).files;
+      
+      if (!files || files.length === 0) {
+        return res.status(400).json({ error: 'No se subieron archivos' });
+      }
+
+      const userId = req.body.userId || req.query.userId;
+      if (!userId) {
+        return res.status(400).json({ error: 'userId es requerido' });
+      }
+
+      const folderId = process.env.GOOGLE_DRIVE_FOLDER_ID;
+      const uploadedUrls: string[] = [];
+
+      for (const file of files) {
+        const timestamp = Date.now();
+        const fileName = `joboffer_${userId}_${timestamp}_${file.originalname}`;
+
+        const result = await uploadFileToDrive(
+          file.buffer,
+          fileName,
+          file.mimetype,
+          folderId
+        );
+
+        uploadedUrls.push(result.directLink);
+      }
+
+      res.json({
+        success: true,
+        urls: uploadedUrls,
+        message: `${uploadedUrls.length} archivo(s) subido(s) exitosamente`,
+      });
+    } catch (error: any) {
+      console.error('Error uploading multiple photos:', error);
+      res.status(500).json({ error: error.message });
+    }
+  },
+];
