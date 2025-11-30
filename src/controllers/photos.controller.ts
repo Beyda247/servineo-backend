@@ -9,6 +9,7 @@ import {
   getJobOfferPhotos,
   deleteJobOfferPhoto,
 } from '../adapter/firestore/jobOfferPhotos.repository';
+import { uploadFileToDrive, getDirectImageUrl } from '../services/googleDrive.service';
 import multer from 'multer';
 
 const upload = multer({
@@ -162,3 +163,48 @@ export const removeJobOfferPhoto = async (req: Request, res: Response) => {
     res.status(500).json({ error: error.message });
   }
 };
+
+// === SUBIDA MÚLTIPLE DE FOTOS (para ofertas de trabajo) ===
+export const uploadMultipleJobOfferPhotos = [
+  upload.array('files', 5),
+  async (req: Request, res: Response) => {
+    try {
+      const files = (req as any).files;
+      
+      if (!files || files.length === 0) {
+        return res.status(400).json({ error: 'No se subieron archivos' });
+      }
+
+      const userId = req.body.userId || req.query.userId;
+      if (!userId) {
+        return res.status(400).json({ error: 'userId es requerido' });
+      }
+
+      const folderId = process.env.GOOGLE_DRIVE_FOLDER_ID;
+      const uploadedUrls: string[] = [];
+
+      for (const file of files) {
+        const timestamp = Date.now();
+        const fileName = `joboffer_${userId}_${timestamp}_${file.originalname}`;
+
+        const result = await uploadFileToDrive(
+          file.buffer,
+          fileName,
+          file.mimetype,
+          folderId
+        );
+
+        uploadedUrls.push(result.directLink);
+      }
+
+      res.json({
+        success: true,
+        urls: uploadedUrls,
+        message: `${uploadedUrls.length} archivo(s) subido(s) exitosamente`,
+      });
+    } catch (error: any) {
+      console.error('Error uploading multiple photos:', error);
+      res.status(500).json({ error: error.message });
+    }
+  },
+];
